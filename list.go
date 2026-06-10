@@ -1,4 +1,4 @@
-package audio
+package main
 
 import (
 	"fmt"
@@ -8,21 +8,15 @@ import (
 	"strings"
 )
 
-// audioExts is the set of file extensions treated as audio (case-insensitive
-// match via ToLower at the call site).
-var audioExts = map[string]bool{
-	".m4a":  true,
-	".mp3":  true,
-	".wav":  true,
-	".flac": true,
-	".ogg":  true,
-	".aac":  true,
-}
+// collect returns absolute paths of every audio file directly inside dir,
+// sorted alphabetically. allowedExts filters by extension; comparison is
+// case-insensitive against the lowercased filename extension.
+func collect(dir string, allowedExts []string) ([]string, error) {
+	allowed := make(map[string]bool, len(allowedExts))
+	for _, ext := range allowedExts {
+		allowed[strings.ToLower(ext)] = true
+	}
 
-// Collect returns absolute paths of every audio file directly inside dir,
-// sorted alphabetically. Errors if the directory is unreadable or empty
-// of audio files.
-func Collect(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read dir: %w", err)
@@ -31,7 +25,7 @@ func Collect(dir string) ([]string, error) {
 	var files []string
 	for _, e := range entries {
 		ext := strings.ToLower(filepath.Ext(e.Name()))
-		if !audioExts[ext] {
+		if !allowed[ext] {
 			continue
 		}
 		abs, err := filepath.Abs(filepath.Join(dir, e.Name()))

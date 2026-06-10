@@ -1,4 +1,4 @@
-package audio
+package main
 
 import (
 	"fmt"
@@ -7,19 +7,18 @@ import (
 	"strings"
 )
 
-// Normalization + encode targets for the concat filter pipeline.
-// Configurable via flags later; hardcoded for now.
-const (
-	defaultSampleRate    = 44100
-	defaultChannelLayout = "stereo"
-	defaultAudioCodec    = "aac"
-	defaultAudioBitrate  = "192k"
-)
+// ffmpegSettings holds ffmpeg encode + normalization knobs. Populated by the
+// caller from Config; no defaults live here.
+type ffmpegSettings struct {
+	SampleRate    int    // e.g. 44100
+	ChannelLayout string // e.g. "stereo"
+	Codec         string // e.g. "aac"
+	Bitrate       string // e.g. "192k"
+}
 
-// RunFFmpeg invokes ffmpeg to concatenate files into out using the concat
-// filter. Each input is normalized to a common sample rate + channel layout,
-// then concatenated, so mixed formats (m4a/mp3/wav/flac/...) merge cleanly.
-// Re-encodes to AAC.
+// runFFmpeg invokes ffmpeg to concatenate files into out using the concat
+// filter. Each input is normalized to s.SampleRate + s.ChannelLayout, then
+// concatenated and re-encoded with s.Codec at s.Bitrate.
 //
 // Built command for N inputs:
 //
@@ -27,9 +26,9 @@ const (
 //	  -i in0 -i in1 ... -i inN-1 \
 //	  -filter_complex "<normalize each + concat -> [out]>" \
 //	  -map [out] \
-//	  -c:a aac -b:a 192k \
+//	  -c:a <codec> -b:a <bitrate> \
 //	  out
-func RunFFmpeg(files []string, out string) error {
+func runFFmpeg(files []string, out string, s ffmpegSettings) error {
 	args := []string{"-y"}
 
 	for _, f := range files {
@@ -37,10 +36,10 @@ func RunFFmpeg(files []string, out string) error {
 	}
 
 	args = append(args,
-		"-filter_complex", buildConcatFilter(len(files), defaultSampleRate, defaultChannelLayout),
+		"-filter_complex", buildConcatFilter(len(files), s.SampleRate, s.ChannelLayout),
 		"-map", "[out]",
-		"-c:a", defaultAudioCodec,
-		"-b:a", defaultAudioBitrate,
+		"-c:a", s.Codec,
+		"-b:a", s.Bitrate,
 		out,
 	)
 
