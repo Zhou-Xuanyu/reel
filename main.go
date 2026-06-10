@@ -23,6 +23,17 @@ func main() {
 		die(err)
 	}
 
+	// interleave transitions if enabled
+	if cfg.Transition {
+		ts, err := newTransitionSource(cfg)
+		if err != nil {
+			die(err)
+		}
+		defer ts.cleanup()
+		files = interleave(files, ts)
+		fmt.Printf("interleaved transitions (%s)\n", ts.describe())
+	}
+
 	// run ffmpeg
 	if err := runFFmpeg(files, cfg.Output, cfg.settings()); err != nil {
 		die(err)

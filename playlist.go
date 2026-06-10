@@ -13,6 +13,24 @@ import (
 // `YYYYMMDD HHMMSS` naming, alphabetical = chronological. User-renamed
 // exports sort by their custom name (original record time is unrecoverable).
 func collect(dir string, allowedExts []string) ([]string, error) {
+	files, err := listAudioFiles(dir, allowedExts)
+	if err != nil {
+		return nil, fmt.Errorf("read dir: %w", err)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no audio files found in %s", dir)
+	}
+	fmt.Printf("found %d audio files in %s\n", len(files), dir)
+	for _, f := range files {
+		fmt.Printf("  %s\n", filepath.Base(f))
+	}
+	return files, nil
+}
+
+// listAudioFiles returns absolute paths of audio files directly inside dir,
+// filtered by extension allowlist and sorted alphabetically. Quiet helper
+// shared by collect and the transition source.
+func listAudioFiles(dir string, allowedExts []string) ([]string, error) {
 	allowed := make(map[string]bool, len(allowedExts))
 	for _, ext := range allowedExts {
 		allowed[strings.ToLower(ext)] = true
@@ -20,7 +38,7 @@ func collect(dir string, allowedExts []string) ([]string, error) {
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read dir: %w", err)
+		return nil, err
 	}
 
 	var files []string
@@ -36,13 +54,5 @@ func collect(dir string, allowedExts []string) ([]string, error) {
 		files = append(files, abs)
 	}
 	sort.Strings(files)
-
-	if len(files) == 0 {
-		return nil, fmt.Errorf("no audio files found in %s", dir)
-	}
-	fmt.Printf("found %d audio files in %s\n", len(files), dir)
-	for _, f := range files {
-		fmt.Printf("  %s\n", filepath.Base(f))
-	}
 	return files, nil
 }

@@ -19,6 +19,8 @@ type Config struct {
 	AudioBitrate      string   `json:"audio_bitrate"`
 	NormalizeLoudness bool     `json:"normalize_loudness"`
 	TargetLUFS        float64  `json:"target_lufs"`
+	Transition        bool     `json:"transition"`
+	TransitionPath    string   `json:"transition_path"`
 }
 
 func defaultConfig() Config {
@@ -32,6 +34,8 @@ func defaultConfig() Config {
 		AudioBitrate:      "192k",
 		NormalizeLoudness: true,
 		TargetLUFS:        -16,
+		Transition:        false,
+		TransitionPath:    "",
 	}
 }
 
@@ -82,6 +86,8 @@ func applyFlags(cfg Config, args []string) (Config, error) {
 	fs.StringVar(&cfg.AudioBitrate, "bitrate", cfg.AudioBitrate, "output audio bitrate (e.g. 192k)")
 	fs.BoolVar(&cfg.NormalizeLoudness, "normalize", cfg.NormalizeLoudness, "normalize each input's loudness (loudnorm) so clips sound equally loud")
 	fs.Float64Var(&cfg.TargetLUFS, "lufs", cfg.TargetLUFS, "target integrated loudness in LUFS (e.g. -16 podcast, -14 streaming, -23 broadcast)")
+	fs.BoolVar(&cfg.Transition, "transition", cfg.Transition, "insert a transition cue between clips")
+	fs.StringVar(&cfg.TransitionPath, "transition-path", cfg.TransitionPath, "transition source: empty = bundled beep, file = that file, directory = random pick from folder")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
