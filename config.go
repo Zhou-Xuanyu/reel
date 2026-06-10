@@ -10,24 +10,28 @@ import (
 const defaultConfigPath = "reel.json"
 
 type Config struct {
-	Dir           string   `json:"dir"`
-	Output        string   `json:"output"`
-	AudioExts     []string `json:"audio_exts"`
-	SampleRate    int      `json:"sample_rate"`
-	ChannelLayout string   `json:"channel_layout"`
-	AudioCodec    string   `json:"audio_codec"`
-	AudioBitrate  string   `json:"audio_bitrate"`
+	Dir               string   `json:"dir"`
+	Output            string   `json:"output"`
+	AudioExts         []string `json:"audio_exts"`
+	SampleRate        int      `json:"sample_rate"`
+	ChannelLayout     string   `json:"channel_layout"`
+	AudioCodec        string   `json:"audio_codec"`
+	AudioBitrate      string   `json:"audio_bitrate"`
+	NormalizeLoudness bool     `json:"normalize_loudness"`
+	TargetLUFS        float64  `json:"target_lufs"`
 }
 
 func defaultConfig() Config {
 	return Config{
-		Dir:           "voice-memo",
-		Output:        "merged.m4a",
-		AudioExts:     []string{".m4a", ".mp3", ".wav", ".flac", ".ogg", ".aac"},
-		SampleRate:    44100,
-		ChannelLayout: "stereo",
-		AudioCodec:    "aac",
-		AudioBitrate:  "192k",
+		Dir:               "voice-memo",
+		Output:            "merged.m4a",
+		AudioExts:         []string{".m4a", ".mp3", ".wav", ".flac", ".ogg", ".aac"},
+		SampleRate:        44100,
+		ChannelLayout:     "stereo",
+		AudioCodec:        "aac",
+		AudioBitrate:      "192k",
+		NormalizeLoudness: true,
+		TargetLUFS:        -16,
 	}
 }
 
@@ -76,6 +80,8 @@ func applyFlags(cfg Config, args []string) (Config, error) {
 	fs.StringVar(&cfg.ChannelLayout, "channel-layout", cfg.ChannelLayout, "target channel layout (mono/stereo)")
 	fs.StringVar(&cfg.AudioCodec, "codec", cfg.AudioCodec, "output audio codec (aac/libmp3lame/flac/...)")
 	fs.StringVar(&cfg.AudioBitrate, "bitrate", cfg.AudioBitrate, "output audio bitrate (e.g. 192k)")
+	fs.BoolVar(&cfg.NormalizeLoudness, "normalize", cfg.NormalizeLoudness, "normalize each input's loudness (loudnorm) so clips sound equally loud")
+	fs.Float64Var(&cfg.TargetLUFS, "lufs", cfg.TargetLUFS, "target integrated loudness in LUFS (e.g. -16 podcast, -14 streaming, -23 broadcast)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -86,9 +92,11 @@ func applyFlags(cfg Config, args []string) (Config, error) {
 // signature stays narrow.
 func (c Config) settings() ffmpegSettings {
 	return ffmpegSettings{
-		SampleRate:    c.SampleRate,
-		ChannelLayout: c.ChannelLayout,
-		Codec:         c.AudioCodec,
-		Bitrate:       c.AudioBitrate,
+		SampleRate:        c.SampleRate,
+		ChannelLayout:     c.ChannelLayout,
+		Codec:             c.AudioCodec,
+		Bitrate:           c.AudioBitrate,
+		NormalizeLoudness: c.NormalizeLoudness,
+		TargetLUFS:        c.TargetLUFS,
 	}
 }

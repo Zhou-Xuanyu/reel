@@ -10,15 +10,18 @@ import (
 // ffmpegSettings holds ffmpeg encode + normalization knobs. Populated by the
 // caller from Config; no defaults live here.
 type ffmpegSettings struct {
-	SampleRate    int    // e.g. 44100
-	ChannelLayout string // e.g. "stereo"
-	Codec         string // e.g. "aac"
-	Bitrate       string // e.g. "192k"
+	SampleRate        int     // e.g. 44100
+	ChannelLayout     string  // e.g. "stereo"
+	Codec             string  // e.g. "aac"
+	Bitrate           string  // e.g. "192k"
+	NormalizeLoudness bool    // run loudnorm per input to equalize volume across clips
+	TargetLUFS        float64 // target integrated loudness when NormalizeLoudness is true (e.g. -16)
 }
 
 // runFFmpeg invokes ffmpeg to concatenate files into out using the concat
-// filter. Each input is normalized to s.SampleRate + s.ChannelLayout, then
-// concatenated and re-encoded with s.Codec at s.Bitrate.
+// filter. Each input is normalized to s.SampleRate + s.ChannelLayout
+// (optionally loudness-normalized via loudnorm), then concatenated and
+// re-encoded with s.Codec at s.Bitrate.
 //
 // Built command for N inputs:
 //
@@ -36,7 +39,7 @@ func runFFmpeg(files []string, out string, s ffmpegSettings) error {
 	}
 
 	args = append(args,
-		"-filter_complex", buildConcatFilter(len(files), s.SampleRate, s.ChannelLayout),
+		"-filter_complex", buildConcatFilter(len(files), s),
 		"-map", "[out]",
 		"-c:a", s.Codec,
 		"-b:a", s.Bitrate,
@@ -54,34 +57,40 @@ func runFFmpeg(files []string, out string, s ffmpegSettings) error {
 }
 
 // buildConcatFilter returns a -filter_complex string that normalizes each
-// input audio stream and concatenates them. For n=3 it produces:
+// input audio stream and concatenates them.
 //
-//	[0:a]aresample=44100,aformat=channel_layouts=stereo[a0];
-//	[1:a]aresample=44100,aformat=channel_layouts=stereo[a1];
-//	[2:a]aresample=44100,aformat=channel_layouts=stereo[a2];
-//	[a0][a1][a2]concat=n=3:v=0:a=1[out]
+// Per-input normalization chain (without loudnorm):
 //
-// Filter graph syntax cheat sheet:
+//	[N:a] aresample=44100, aformat=channel_layouts=stereo [aN]
 //
-//   - [N:a]            select stream N's audio track as filter input
-//   - aresample=R      resample to rate R Hz (matches all inputs)
-//   - aformat=...      force a channel layout (e.g. stereo)
-//   - [aN]             label this normalized stream so concat can reference it
-//   - concat=n=N:v=0:a=1  join N inputs; v=0 audio-only; a=1 emit one audio stream
-//   - [out]            label the final stream so -map [out] can pick it up
-//   - `;` separates filter chains, `,` chains filters in one chain
-func buildConcatFilter(n, sampleRate int, channelLayout string) string {
-	var b strings.Builder
-
-	for i := range n {
-		fmt.Fprintf(&b, "[%d:a]aresample=%d,aformat=channel_layouts=%s[a%d];",
-			i, sampleRate, channelLayout, i)
+// With loudnorm enabled, the chain gains a loudness pass:
+//
+//	[N:a] aresample=44100, aformat=channel_layouts=stereo,
+//	      loudnorm=I=-16:TP=-1.5:LRA=11 [aN]
+//
+// Then all normalized labels feed into the concat filter:
+//
+//	[a0][a1]...[aN-1] concat=n=N:v=0:a=1 [out]
+//
+// loudnorm params:
+//   - I  = target integrated loudness in LUFS (s.TargetLUFS). -16 = podcast,
+//     -14 = YouTube/Spotify, -23 = broadcast.
+//   - TP = true peak ceiling in dBTP. -1.5 leaves headroom to avoid clipping
+//     after lossy re-encode.
+//   - LRA = loudness range. 11 LU is typical.
+func buildConcatFilter(n int, s ffmpegSettings) string {
+	normChain := fmt.Sprintf("aresample=%d,aformat=channel_layouts=%s", s.SampleRate, s.ChannelLayout)
+	if s.NormalizeLoudness {
+		normChain += fmt.Sprintf(",loudnorm=I=%.1f:TP=-1.5:LRA=11", s.TargetLUFS)
 	}
 
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "[%d:a]%s[a%d];", i, normChain, i)
+	}
 	for i := range n {
 		fmt.Fprintf(&b, "[a%d]", i)
 	}
-
 	fmt.Fprintf(&b, "concat=n=%d:v=0:a=1[out]", n)
 	return b.String()
 }
