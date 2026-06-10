@@ -1,6 +1,7 @@
-/reel
+reel
 *.test
 *.out
-/testdata/output/
+testdata/output/
 .DS_Store
-/merged.m4a
+merged.m4a
+voice_memo
