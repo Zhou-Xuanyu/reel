@@ -1,6 +1,6 @@
 # Reel
 
-Three small commands that turn a folder of voice memos into one continuous audio file.
+Small cli tool kit that turn a folder of voice memos into one continuous audio file.
 
 - **`reel cp`** — pull recordings out of Apple's Voice Memos library by date range.
 - **`reel ls`** — generate a plaintext playlist from a folder (and optional transition folder).
@@ -75,7 +75,7 @@ reel ls --mode=per-folder                            # one playlist per direct s
 reel ls --transition=transitions                     # interleave cues
 reel ls --transition=transitions --random=false      # cycle cues sequentially
 reel ls --dir=podcast                                # podcast/ → output/podcast.reel
-reel ls --out=somewhere/list.reel                     # explicit path (flat/recursive only)
+reel ls --out=somewhere/list.reel                    # explicit path (flat/recursive only)
 reel ls --out=-                                      # write to stdout (flat/recursive only)
 ```
 
@@ -111,14 +111,14 @@ Playlists are written with the `.reel` extension; see the [Playlist file format]
 Reads a playlist and concatenates every listed file via ffmpeg's concat filter. Each input is resampled and (optionally) loudness-normalized so clips sound equally loud.
 
 ```
-reel merge                                        # output/voice-memo.reel → output/voice-memo.m4a
-reel merge --playlist=output/podcast.reel          # → output/podcast.m4a
-reel merge --recursive                            # walk output/ for *.reel, merge each
-reel merge --recursive --playlist=output/voice-memo  # walk a specific subtree
+reel merge                                              # output/voice-memo.reel → output/voice-memo.m4a
+reel merge --playlist=output/podcast.reel               # → output/podcast.m4a
+reel merge --recursive                                  # walk output/ for *.reel, merge each
+reel merge --recursive --playlist=output/voice-memo     # walk a specific subtree
 reel merge --out=show.mp3 --codec=libmp3lame
-reel merge --normalize=false                      # raw levels, no loudnorm
-reel merge --lufs=-14                             # louder streaming target
-reel merge --playlist=-                           # read playlist from stdin
+reel merge --normalize=false                            # raw levels, no loudnorm
+reel merge --lufs=-14                                   # louder streaming target
+reel merge --playlist=-                                 # read playlist from stdin
 ```
 
 | Flag | Default | Meaning |
@@ -138,8 +138,8 @@ reel merge --playlist=-                           # read playlist from stdin
 Recursive mode pairs with `reel ls --mode=per-folder`. After generating one `.reel` per date subfolder, one command merges them all in place:
 
 ```
-reel cp --from=2026-06-08 --by-date            # → voice-memo/2026-06-08/, ...
-reel ls --mode=per-folder                      # → output/voice-memo/2026-06-08.reel, ...
+reel cp --from=2026-06-08 --by-date                  # → voice-memo/2026-06-08/, ...
+reel ls --mode=per-folder                            # → output/voice-memo/2026-06-08.reel, ...
 reel merge --recursive --playlist=output/voice-memo  # → output/voice-memo/2026-06-08.m4a, ...
 ```
 
@@ -202,7 +202,7 @@ Closer to 0 = louder. Disable with `--normalize=false` if you want raw levels pr
                │   reel ls [--transition=transitions]
                ▼
 ┌────────────────────────────────┐
-│ ./output/voice-memo.reel        │
+│ ./output/voice-memo.reel       │
 │ (plain text, hand-editable)    │
 └──────────────┬─────────────────┘
                │   reel merge
@@ -220,8 +220,8 @@ Per-folder variant (after `reel cp --by-date` + `reel ls --mode=per-folder`):
                ▼
 ┌────────────────────────────────┐
 │ ./output/voice-memo/           │
-│   2026-06-08.reel               │
-│   2026-06-09.reel               │
+│   2026-06-08.reel              │
+│   2026-06-09.reel              │
 │   ...                          │
 └────────────────────────────────┘
 ```
@@ -250,6 +250,3 @@ Filenames follow the pattern `YYYYMMDD HHMMSS-<hex>.{m4a,qta}` and contain the *
 
 User-renamed exports lose the date prefix; for those, sorting falls back to whatever the file is named.
 
-## Todo
-1. release
-1. man page
