@@ -196,4 +196,5 @@ Filenames follow the pattern `YYYYMMDD HHMMSS-<hex>.{m4a,qta}` and contain the *
 User-renamed exports lose the date prefix; for those, sorting falls back to whatever the file is named.
 
 ## Todo
-1. nested file in transition
+1. reel cp: copy by date
+1. reel ls: nested files

@@ -23,16 +23,11 @@ func runMerge(args []string) {
 	lufs := fs.Float64("lufs", -16, "target integrated loudness in LUFS")
 	fs.Parse(args)
 
-	files, err := readPlaylist(*playlist)
-	if err != nil {
-		die(err)
-	}
-	if len(files) == 0 {
-		die("playlist is empty:", *playlist)
-	}
-	fmt.Printf("read %d files from %s\n", len(files), *playlist)
+	// read absolute input paths from the playlist file
+	files := loadPlaylist(*playlist)
 
-	s := ffmpegSettings{
+	// pack flags into encode + normalization settings
+	settings := ffmpegSettings{
 		SampleRate:        *sampleRate,
 		ChannelLayout:     *channelLayout,
 		Codec:             *codec,
@@ -40,7 +35,28 @@ func runMerge(args []string) {
 		NormalizeLoudness: *normalize,
 		TargetLUFS:        *lufs,
 	}
-	if err := runFFmpeg(files, *out, s); err != nil {
+
+	// concat + encode via ffmpeg
+	concatTo(*out, files, settings)
+}
+
+// loadPlaylist reads paths from the playlist file (or stdin), prints a
+// count, and dies on error or empty result.
+func loadPlaylist(path string) []string {
+	files, err := readPlaylist(path)
+	if err != nil {
+		die(err)
+	}
+	if len(files) == 0 {
+		die("playlist is empty:", path)
+	}
+	fmt.Printf("read %d files from %s\n", len(files), path)
+	return files
+}
+
+// concatTo invokes ffmpeg to merge files into out. Dies on ffmpeg failure.
+func concatTo(out string, files []string, s ffmpegSettings) {
+	if err := runFFmpeg(files, out, s); err != nil {
 		die(err)
 	}
 }

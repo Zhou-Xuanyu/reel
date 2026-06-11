@@ -37,61 +37,93 @@ func runCp(args []string) {
 	dryRun := fs.Bool("dry-run", false, "list matches without copying or linking")
 	fs.Parse(args)
 
-	if *from == "" {
+	// resolve the inclusive date range from the two flag strings
+	fromTime, toTime := parseDateRange(*from, *to)
+
+	// scan src for Voice Memos whose filename date falls inside [from, to]
+	matches := findInRange(*src, fromTime, toTime)
+
+	// always print what we found before any disk action
+	printMatches(matches, fromTime, toTime)
+
+	// preview mode stops here — nothing touches dst
+	if *dryRun {
+		return
+	}
+
+	// symlink or hard-copy each match into dst, then report
+	transferAll(matches, *src, *dst, *hardCopy)
+}
+
+// parseDateRange parses --from (required) and --to (default today) into an
+// inclusive [from, to] range. Dies on missing or malformed input.
+func parseDateRange(fromStr, toStr string) (time.Time, time.Time) {
+	if fromStr == "" {
 		die("reel cp: --from is required (YYYY-MM-DD)")
 	}
-	fromTime, err := time.ParseInLocation("2006-01-02", *from, time.Local)
+	from, err := time.ParseInLocation("2006-01-02", fromStr, time.Local)
 	if err != nil {
 		die("parse --from:", err)
 	}
 
-	toTime := time.Now()
-	if *to != "" {
-		t, err := time.ParseInLocation("2006-01-02", *to, time.Local)
+	to := time.Now()
+	if toStr != "" {
+		t, err := time.ParseInLocation("2006-01-02", toStr, time.Local)
 		if err != nil {
 			die("parse --to:", err)
 		}
-		// include the full end day
-		toTime = t.Add(24*time.Hour - time.Second)
+		// include the full end day (23:59:59)
+		to = t.Add(24*time.Hour - time.Second)
 	}
-	if fromTime.After(toTime) {
+	if from.After(to) {
 		die("--from is after --to")
 	}
+	return from, to
+}
 
-	matches, err := findVoiceMemos(*src, fromTime, toTime)
+// findInRange scans src for Voice Memos in the given date range. Dies on
+// scan error or no matches.
+func findInRange(src string, from, to time.Time) []voiceMemo {
+	matches, err := findVoiceMemos(src, from, to)
 	if err != nil {
 		die(err)
 	}
 	if len(matches) == 0 {
 		die(fmt.Sprintf("no voice memos in %s..%s",
-			fromTime.Format("2006-01-02"), toTime.Format("2006-01-02")))
+			from.Format("2006-01-02"), to.Format("2006-01-02")))
 	}
+	return matches
+}
 
+// printMatches prints a header line and one row per match showing its
+// recorded time + filename.
+func printMatches(matches []voiceMemo, from, to time.Time) {
 	fmt.Printf("found %d voice memos in %s..%s\n",
-		len(matches), fromTime.Format("2006-01-02"), toTime.Format("2006-01-02"))
+		len(matches), from.Format("2006-01-02"), to.Format("2006-01-02"))
 	for _, m := range matches {
 		fmt.Printf("  %s  %s\n", m.at.Format("2006-01-02 15:04:05"), m.name)
 	}
+}
 
-	if *dryRun {
-		return
-	}
-
-	if err := os.MkdirAll(*dst, 0o755); err != nil {
+// transferAll creates dstDir if needed, then symlinks (or hard copies) each
+// match from srcDir into dstDir. Dies on the first failure. Prints a final
+// summary line.
+func transferAll(matches []voiceMemo, srcDir, dstDir string, hardCopy bool) {
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		die("mkdir destination:", err)
 	}
 	for _, m := range matches {
-		srcPath := filepath.Join(*src, m.name)
-		dstPath := filepath.Join(*dst, m.name)
-		if err := transfer(srcPath, dstPath, *hardCopy); err != nil {
+		srcPath := filepath.Join(srcDir, m.name)
+		dstPath := filepath.Join(dstDir, m.name)
+		if err := transfer(srcPath, dstPath, hardCopy); err != nil {
 			die("transfer "+m.name+":", err)
 		}
 	}
 	action := "linked"
-	if *hardCopy {
+	if hardCopy {
 		action = "copied"
 	}
-	fmt.Printf("%s %d files -> %s\n", action, len(matches), *dst)
+	fmt.Printf("%s %d files -> %s\n", action, len(matches), dstDir)
 }
 
 // voiceMemo pairs a file's basename with its parsed record time.
@@ -106,7 +138,7 @@ func findVoiceMemos(src string, from, to time.Time) ([]voiceMemo, error) {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		if os.IsPermission(err) {
-			return nil, fmt.Errorf("permission denied reading %s\n  Grant Full Disk Access to your terminal:\n  System Settings → Privacy & Security → Full Disk Access", src)
+			return nil, fmt.Errorf("permission denied reading %s\n", src)
 		}
 		return nil, fmt.Errorf("read src: %w", err)
 	}

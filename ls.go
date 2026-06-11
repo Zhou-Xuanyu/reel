@@ -33,41 +33,68 @@ func runLs(args []string) {
 	out := fs.String("out", "playlist.txt", "output playlist path (- for stdout)")
 	fs.Parse(args)
 
-	clips, err := listAudio(*dir)
+	// collect audio files from the input folder
+	clips := loadClips(*dir)
+
+	// optionally collect transition cues from a second folder
+	transitions := loadTransitions(*trans)
+
+	// weave transitions between clips
+	files := interleave(clips, transitions, *random)
+
+	// write to file or stdout
+	writePlaylistTo(*out, files, *dir, *trans, *random, len(clips))
+}
+
+// loadClips reads audio files from dir and dies on error or empty result.
+func loadClips(dir string) []string {
+	files, err := listAudio(dir)
 	if err != nil {
 		die(err)
 	}
-	if len(clips) == 0 {
-		die("no audio files in", *dir)
+	if len(files) == 0 {
+		die("no audio files in", dir)
 	}
+	return files
+}
 
-	var transitions []string
-	if *trans != "" {
-		transitions, err = listAudio(*trans)
-		if err != nil {
-			die("transitions:", err)
-		}
-		if len(transitions) == 0 {
-			die("no audio files in transition folder", *trans)
-		}
+// loadTransitions reads audio files from dir when dir is non-empty. Returns
+// nil when dir is empty (transitions disabled). Dies on error or empty dir.
+func loadTransitions(dir string) []string {
+	if dir == "" {
+		return nil
 	}
+	files, err := listAudio(dir)
+	if err != nil {
+		die("transitions:", err)
+	}
+	if len(files) == 0 {
+		die("no audio files in transition folder", dir)
+	}
+	return files
+}
 
-	files := interleave(clips, transitions, *random)
-
-	if *out == "-" {
-		writePlaylist(os.Stdout, files, *dir, *trans, *random)
+// writePlaylistTo writes the playlist to path (or stdout if path == "-").
+// Prints a summary line on success when writing to a file.
+func writePlaylistTo(path string, files []string, dir, trans string, random bool, clipCount int) {
+	if path == "-" {
+		if err := writePlaylist(os.Stdout, files, dir, trans, random); err != nil {
+			die("write playlist:", err)
+		}
 		return
 	}
-	f, err := os.Create(*out)
+
+	f, err := os.Create(path)
 	if err != nil {
 		die("create playlist:", err)
 	}
 	defer f.Close()
-	if err := writePlaylist(f, files, *dir, *trans, *random); err != nil {
+
+	if err := writePlaylist(f, files, dir, trans, random); err != nil {
 		die("write playlist:", err)
 	}
 	fmt.Printf("wrote playlist with %d entries (%d clips, %d transitions) -> %s\n",
-		len(files), len(clips), max(0, len(files)-len(clips)), *out)
+		len(files), clipCount, len(files)-clipCount, path)
 }
 
 // listAudio returns absolute paths of audio files directly inside dir,
