@@ -171,3 +171,9 @@ Disable with `--normalize=false` if you want raw level preserved. Transitions al
 | `ffmpeg.go` | `ffmpegSettings`, `runFFmpeg()`, filter graph builder. |
 | `voice-memo/` | Default input directory. |
 | `transitions/` | Default transition cue directory. |
+
+## Todo
+
+1. release
+1. tool for selecting Apple's voice memo by time period
+1. manual or help page
