@@ -34,7 +34,7 @@ go run . <command> [flags]
 reel cp --from=2026-06-08              # → ./voice-memo/  (symlinks by default)
 reel ls --transition=transitions       # → ./playlist.txt
 reel merge                             # → ./merged.m4a
-afplay merged.m4a                      # macOS playback
+mpv merged.m4a                         # playback (brew install mpv)
 ```
 
 Inspect or hand-edit the playlist between `ls` and `merge` — it's plain text.
@@ -196,7 +196,4 @@ Filenames follow the pattern `YYYYMMDD HHMMSS-<hex>.{m4a,qta}` and contain the *
 User-renamed exports lose the date prefix; for those, sorting falls back to whatever the file is named.
 
 ## Todo
-
-1. release
-1. tool for selecting Apple's voice memo by time period
-1. manual or help page
+1. nested file in transition
