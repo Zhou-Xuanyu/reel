@@ -34,87 +34,109 @@ func runCp(args []string) {
 	from := fs.String("from", "", "inclusive start date YYYY-MM-DD (required)")
 	to := fs.String("to", "", "inclusive end date YYYY-MM-DD (default: today)")
 	hardCopy := fs.Bool("copy", false, "hard copy instead of symlink (default: symlink)")
+	byDate := fs.Bool("by-date", false, "group copies into per-date subfolders under to-dir")
 	dryRun := fs.Bool("dry-run", false, "list matches without copying or linking")
 	fs.Parse(args)
 
-	// resolve the inclusive date range from the two flag strings
-	fromTime, toTime := parseDateRange(*from, *to)
+	// validate the date range as wall-clock labels (YYYYMMDD strings)
+	fromDate, toDate := parseDateRange(*from, *to)
 
 	// scan src for Voice Memos whose filename date falls inside [from, to]
-	matches := findInRange(*src, fromTime, toTime)
+	matches := findInRange(*src, fromDate, toDate)
 
 	// always print what we found before any disk action
-	printMatches(matches, fromTime, toTime)
+	printMatches(matches, fromDate, toDate)
 
 	// preview mode stops here — nothing touches dst
 	if *dryRun {
 		return
 	}
 
-	// symlink or hard-copy each match into dst, then report
-	transferAll(matches, *src, *dst, *hardCopy)
+	// symlink or hard-copy each match into dst (optionally grouped by date)
+	transferAll(matches, *src, *dst, *hardCopy, *byDate)
 }
 
-// parseDateRange parses --from (required) and --to (default today) into an
-// inclusive [from, to] range. Dies on missing or malformed input.
-func parseDateRange(fromStr, toStr string) (time.Time, time.Time) {
+// parseDateRange validates --from (required) and --to (default today) as
+// YYYY-MM-DD wall-clock date labels and returns them in YYYYMMDD form for
+// string comparison against filename prefixes.
+//
+// Voice Memos filenames are pure wall-clock labels — they carry no timezone
+// information. We compare them as text, never as absolute instants. The
+// local clock is only consulted to *read* what date the user means by
+// "today" when --to is omitted; the result is then just another label.
+func parseDateRange(fromStr, toStr string) (string, string) {
 	if fromStr == "" {
 		die("reel cp: --from is required (YYYY-MM-DD)")
 	}
-	from, err := time.ParseInLocation("2006-01-02", fromStr, time.Local)
-	if err != nil {
-		die("parse --from:", err)
-	}
+	fromKey := mustNormalizeDate(fromStr, "--from")
 
-	to := time.Now()
-	if toStr != "" {
-		t, err := time.ParseInLocation("2006-01-02", toStr, time.Local)
-		if err != nil {
-			die("parse --to:", err)
-		}
-		// include the full end day (23:59:59)
-		to = t.Add(24*time.Hour - time.Second)
+	if toStr == "" {
+		// today as the local clock displays it
+		toStr = time.Now().Format("2006-01-02")
 	}
-	if from.After(to) {
+	toKey := mustNormalizeDate(toStr, "--to")
+
+	if fromKey > toKey {
 		die("--from is after --to")
 	}
-	return from, to
+	return fromKey, toKey
+}
+
+// mustNormalizeDate validates a YYYY-MM-DD string and returns its YYYYMMDD
+// form (no separators) for direct string comparison.
+func mustNormalizeDate(s, name string) string {
+	if _, err := time.Parse("2006-01-02", s); err != nil {
+		die("parse "+name+":", err)
+	}
+	return strings.ReplaceAll(s, "-", "")
+}
+
+// formatDateKey turns YYYYMMDD back into YYYY-MM-DD for display.
+func formatDateKey(key string) string {
+	return key[:4] + "-" + key[4:6] + "-" + key[6:8]
 }
 
 // findInRange scans src for Voice Memos in the given date range. Dies on
 // scan error or no matches.
-func findInRange(src string, from, to time.Time) []voiceMemo {
-	matches, err := findVoiceMemos(src, from, to)
+func findInRange(src, fromDate, toDate string) []voiceMemo {
+	matches, err := findVoiceMemos(src, fromDate, toDate)
 	if err != nil {
 		die(err)
 	}
 	if len(matches) == 0 {
 		die(fmt.Sprintf("no voice memos in %s..%s",
-			from.Format("2006-01-02"), to.Format("2006-01-02")))
+			formatDateKey(fromDate), formatDateKey(toDate)))
 	}
 	return matches
 }
 
 // printMatches prints a header line and one row per match showing its
 // recorded time + filename.
-func printMatches(matches []voiceMemo, from, to time.Time) {
+func printMatches(matches []voiceMemo, fromDate, toDate string) {
 	fmt.Printf("found %d voice memos in %s..%s\n",
-		len(matches), from.Format("2006-01-02"), to.Format("2006-01-02"))
+		len(matches), formatDateKey(fromDate), formatDateKey(toDate))
 	for _, m := range matches {
 		fmt.Printf("  %s  %s\n", m.at.Format("2006-01-02 15:04:05"), m.name)
 	}
 }
 
-// transferAll creates dstDir if needed, then symlinks (or hard copies) each
-// match from srcDir into dstDir. Dies on the first failure. Prints a final
-// summary line.
-func transferAll(matches []voiceMemo, srcDir, dstDir string, hardCopy bool) {
+// transferAll creates dstDir (and per-date subdirs if byDate is on), then
+// symlinks (or hard copies) each match. Dies on the first failure. Prints
+// a final summary line.
+func transferAll(matches []voiceMemo, srcDir, dstDir string, hardCopy, byDate bool) {
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		die("mkdir destination:", err)
 	}
 	for _, m := range matches {
+		targetDir := dstDir
+		if byDate {
+			targetDir = filepath.Join(dstDir, m.at.Format("2006-01-02"))
+			if err := os.MkdirAll(targetDir, 0o755); err != nil {
+				die("mkdir "+targetDir+":", err)
+			}
+		}
 		srcPath := filepath.Join(srcDir, m.name)
-		dstPath := filepath.Join(dstDir, m.name)
+		dstPath := filepath.Join(targetDir, m.name)
 		if err := transfer(srcPath, dstPath, hardCopy); err != nil {
 			die("transfer "+m.name+":", err)
 		}
@@ -123,18 +145,27 @@ func transferAll(matches []voiceMemo, srcDir, dstDir string, hardCopy bool) {
 	if hardCopy {
 		action = "copied"
 	}
-	fmt.Printf("%s %d files -> %s\n", action, len(matches), dstDir)
+	layout := dstDir
+	if byDate {
+		layout = dstDir + "/<YYYY-MM-DD>/"
+	}
+	fmt.Printf("%s %d files -> %s\n", action, len(matches), layout)
 }
 
-// voiceMemo pairs a file's basename with its parsed record time.
+// voiceMemo pairs a file's basename with the time.Time form of its filename
+// digits. The time.Time is used for display and for the by-date subfolder
+// name only — never compared for filtering. Date filtering is done by
+// string comparison against the YYYYMMDD prefix elsewhere.
 type voiceMemo struct {
 	name string
 	at   time.Time
 }
 
-// findVoiceMemos lists Voice Memos in src whose filename-derived date falls
-// inside the inclusive range [from, to], sorted by date.
-func findVoiceMemos(src string, from, to time.Time) ([]voiceMemo, error) {
+// findVoiceMemos lists Voice Memos in src whose filename date prefix
+// (YYYYMMDD) falls inside the inclusive [fromDate, toDate] range. Sorted
+// by filename, which is chronological because Voice Memos names start
+// with `YYYYMMDD HHMMSS`.
+func findVoiceMemos(src, fromDate, toDate string) ([]voiceMemo, error) {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		if os.IsPermission(err) {
@@ -155,19 +186,23 @@ func findVoiceMemos(src string, from, to time.Time) ([]voiceMemo, error) {
 		if m == nil {
 			continue
 		}
-		at, err := time.ParseInLocation("20060102 150405", m[1], time.Local)
-		if err != nil {
+		// pure string filter on the YYYYMMDD portion
+		dateKey := m[1][:8]
+		if dateKey < fromDate || dateKey > toDate {
 			continue
 		}
-		if at.Before(from) || at.After(to) {
+		// parse for display / subfolder name only; not used for comparison
+		at, err := time.Parse("20060102 150405", m[1])
+		if err != nil {
 			continue
 		}
 		out = append(out, voiceMemo{name: e.Name(), at: at})
 	}
 
-	// Ascending by recorded time.
+	// Sort by filename. Voice Memos names start with `YYYYMMDD HHMMSS`,
+	// so lexicographic order is chronological.
 	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j].at.Before(out[j-1].at); j-- {
+		for j := i; j > 0 && out[j].name < out[j-1].name; j-- {
 			out[j], out[j-1] = out[j-1], out[j]
 		}
 	}
