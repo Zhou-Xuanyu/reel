@@ -1,185 +1,199 @@
 # Reel
 
-CLI that merges a folder of audio recordings (primarily Apple Voice Memos) into one continuous file. Built around ffmpeg's concat filter — handles mixed input formats, normalizes loudness so clips sound equally loud, and optionally inserts transition cues between clips.
+Three small commands that turn a folder of voice memos into one continuous audio file.
+
+- **`reel cp`** — pull recordings out of Apple's Voice Memos library by date range.
+- **`reel ls`** — generate a plaintext playlist from a folder (and optional transition folder).
+- **`reel merge`** — read a playlist and concatenate everything via ffmpeg.
+
+Each command is independent. Use them as a pipeline, or skip any step you don't need (hand-edit the playlist, run merge against a playlist someone else made, etc.).
 
 ## Requirements
 
 - **Go 1.22+** (uses `for i := range n` and `math/rand/v2`)
-- **ffmpeg** on `$PATH` — install via `brew install ffmpeg` (macOS) or your package manager
+- **ffmpeg** on `$PATH` — `brew install ffmpeg` (macOS) or your package manager
+- macOS **Full Disk Access** granted to your terminal if you use `reel cp` against the Voice Memos library
 
 ## Install / build
 
 ```
 git clone <repo>
 cd reel
-go build -o reel       # produces ./reel
+go build -o reel
 ```
 
 Or run without building:
 
 ```
-go run .
+go run . <command> [flags]
 ```
 
-## Quick start
+## Typical pipeline
 
 ```
-mkdir voice-memo
-cp ~/your-recordings/*.m4a voice-memo/
-./reel
+reel cp --from=2026-06-08              # → ./voice-memo/  (symlinks by default)
+reel ls --transition=transitions       # → ./playlist.txt
+reel merge                             # → ./merged.m4a
+afplay merged.m4a                      # macOS playback
 ```
 
-Reads every audio file in `voice-memo/`, sorts alphabetically, normalizes loudness, merges to `merged.m4a` in the current directory.
+Inspect or hand-edit the playlist between `ls` and `merge` — it's plain text.
 
-## Configuration
+## `reel cp`
 
-Three layers, lowest to highest priority:
-
-1. **Built-in defaults** (in `defaultConfig()`)
-2. **`reel.json`** in the current directory (optional)
-3. **CLI flags**
-
-Each layer overrides only the fields it sets. Missing keys in `reel.json` keep the default.
-
-### Config fields
-
-| JSON key | Flag | Type | Default | Meaning |
-|---|---|---|---|---|
-| `dir` | `--dir` | string | `voice-memo` | Input folder (non-recursive). |
-| `output` | `--out` | string | `merged.m4a` | Output file path. Extension picks the container. |
-| `audio_exts` | — | string[] | `.m4a .mp3 .wav .flac .ogg .aac .qta` | Extensions treated as audio (case-insensitive). `.qta` is newer Voice Memos format (MP4/AAC under the hood). |
-| `sample_rate` | `--sample-rate` | int | `44100` | Target sample rate in Hz. All inputs resampled to this. |
-| `channel_layout` | `--channel-layout` | string | `stereo` | Target channel layout (`mono`/`stereo`). |
-| `audio_codec` | `--codec` | string | `aac` | Output codec (`aac`/`libmp3lame`/`flac`/`pcm_s16le`/...). |
-| `audio_bitrate` | `--bitrate` | string | `192k` | Output bitrate (e.g. `192k`, `256k`). |
-| `normalize_loudness` | `--normalize` | bool | `true` | Run `loudnorm` per input so clips land at the same loudness. |
-| `target_lufs` | `--lufs` | float | `-16` | Target integrated loudness. `-16` podcast, `-14` streaming, `-23` broadcast. |
-| `fade` | `--fade` | bool | `false` | Apply fade-in and fade-out to each clip (avoids click pops at boundaries). |
-| `fade_seconds` | `--fade-seconds` | float | `0.15` | Duration of each fade in seconds. |
-| `transition` | `--transition` | bool | `false` | Insert transitions between clips. |
-| `transition_path` | `--transition-path` | string | `transitions` | Folder containing transition audio files. |
-| `transition_random` | `--transition-random` | bool | `true` | Random pick vs sequential cycle through the folder. |
-
-### Example `reel.json`
-
-```json
-{
-  "dir": "my-recordings",
-  "output": "out.m4a",
-  "audio_bitrate": "256k",
-  "normalize_loudness": true,
-  "target_lufs": -14,
-  "transition": true,
-  "transition_path": "cues",
-  "transition_random": false
-}
-```
-
-### Flag examples
+Copies (or symlinks) Apple Voice Memos out of the system library, filtered by an inclusive date range on the recording's filename (`YYYYMMDD HHMMSS-*.m4a` / `.qta`).
 
 ```
-./reel                                       # all defaults
-./reel --dir=podcasts --out=show.mp3 --codec=libmp3lame
-./reel --lufs=-14                            # louder target
-./reel --normalize=false                     # skip loudness pass
-./reel --transition                          # interleave cues
-./reel --transition --transition-random=false
-./reel --transition --transition-path=stings
+reel cp --from=2026-06-08
+reel cp --from=2026-06-01 --to=2026-06-30 --copy
+reel cp --from=2026-06-08 --dry-run
+reel cp --src=/some/other/dir --to-dir=batch1 --from=2024-01-01
 ```
 
-CLI flags **override** anything in `reel.json`.
+| Flag | Default | Meaning |
+|---|---|---|
+| `--src` | Voice Memos library under `~/Library/Group Containers/...` | Source folder |
+| `--to-dir` | `./voice-memo` | Destination folder |
+| `--from` | (required) | Inclusive start date `YYYY-MM-DD` |
+| `--to` | today | Inclusive end date `YYYY-MM-DD` |
+| `--copy` | `false` | Hard copy instead of symlink |
+| `--dry-run` | `false` | List matches without copying or linking |
 
-## Output format
+Symlinks point at absolute source paths and survive moving the destination folder. If you'll modify or delete the destination files, use `--copy`.
 
-The output container is chosen from the extension of `--out` / `output`. The codec is set by `--codec` / `audio_codec`. They must be compatible:
+## `reel ls`
+
+Reads a folder of audio files, optionally interleaves transitions from a second folder, and writes a plaintext playlist.
+
+```
+reel ls                                              # voice-memo/ → playlist.txt
+reel ls --transition=transitions                     # interleave cues
+reel ls --transition=transitions --random=false      # cycle cues sequentially
+reel ls --dir=other --out=other.txt
+reel ls --out=-                                      # write to stdout
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--dir` | `voice-memo` | Input folder of clips (non-recursive). |
+| `--transition` | (empty) | Folder of transition cues. Empty disables. |
+| `--random` | `true` | Random pick per gap vs sequential cycle. |
+| `--out` | `playlist.txt` | Output path. `-` writes to stdout. |
+
+Supported audio extensions: `.m4a .mp3 .wav .flac .ogg .aac .qta` (case-insensitive).
+
+### Playlist format
+
+```
+# generated by reel ls at 2026-06-11T15:15:55+08:00
+# dir: voice-memo
+# transition: transitions (random)
+# entries: 5
+
+/Users/jade/Developer/reel/voice-memo/clip1.m4a
+/Users/jade/Developer/reel/transitions/beep.m4a
+/Users/jade/Developer/reel/voice-memo/clip2.m4a
+/Users/jade/Developer/reel/transitions/beep.m4a
+/Users/jade/Developer/reel/voice-memo/clip3.m4a
+```
+
+One absolute path per line. Lines starting with `#` are comments. Blank lines are skipped on read. **Hand-edit freely** — reorder, drop entries, splice in any audio file you want.
+
+## `reel merge`
+
+Reads a playlist and concatenates every listed file via ffmpeg's concat filter. Each input is resampled and (optionally) loudness-normalized so clips sound equally loud.
+
+```
+reel merge                                        # playlist.txt → merged.m4a
+reel merge --out=show.mp3 --codec=libmp3lame
+reel merge --normalize=false                      # raw levels, no loudnorm
+reel merge --lufs=-14                             # louder streaming target
+reel merge --playlist=-                           # read playlist from stdin
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--playlist` | `playlist.txt` | Input playlist path. `-` reads from stdin. |
+| `--out` | `merged.m4a` | Output file. Extension picks the container. |
+| `--sample-rate` | `44100` | Target sample rate (Hz). All inputs resampled to this. |
+| `--channel-layout` | `stereo` | Target channel layout (`mono` or `stereo`). |
+| `--codec` | `aac` | Output audio codec. |
+| `--bitrate` | `192k` | Output audio bitrate. |
+| `--normalize` | `true` | Loudness-normalize each input via ffmpeg's `loudnorm`. |
+| `--lufs` | `-16` | Target integrated loudness when normalize is on. |
+
+### Output container vs codec
+
+The output extension picks the container; the codec is set by `--codec`. They must be compatible:
 
 | Output extension | Use codec |
 |---|---|
 | `.m4a`, `.mp4` | `aac` |
 | `.mp3` | `libmp3lame` |
 | `.flac` | `flac` |
-| `.wav` | `pcm_s16le` (raw 16-bit PCM) |
+| `.wav` | `pcm_s16le` |
 | `.ogg` | `libvorbis` or `libopus` |
 
 Mismatch (e.g. `--out=x.wav --codec=aac`) → ffmpeg errors.
 
-## How sorting works
+### Loudness normalization
 
-Files in the input directory are sorted **alphabetically by filename**. For Apple Voice Memos with their native `YYYYMMDD HHMMSS` naming, alphabetical = chronological. For user-renamed exports, sort order follows the custom name (the original record time is unrecoverable from the file alone).
-
-Apple's Voice Memos may live in `~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/`.
-
-## Transitions
-
-When `--transition` is on, reel reads audio files from `--transition-path` (default `transitions/`) and inserts one between each consecutive pair of clips.
-
-- **Random mode** (default): uniform random pick from the folder for every gap. Repeats allowed.
-- **Sequential mode** (`--transition-random=false`): cycle through the folder in sorted order. Pool of 3, 5 gaps → `t0, t1, t2, t0, t1`.
-
-If the folder is missing or contains no audio files, reel errors out (same policy as the input dir).
-
-## Loudness normalization
-
-Voice Memos recorded under different conditions sound very different. By default reel runs ffmpeg's `loudnorm` filter on each input before concat. Each clip is shifted toward the target LUFS, so all clips sound equally loud in the output.
+Voice memos recorded under different conditions vary wildly in volume. By default `merge` runs ffmpeg's `loudnorm` filter on each input before concat, shifting each toward the target LUFS so the merged output sounds even.
 
 - `-16 LUFS` (default) — typical podcast / spoken word.
-- `-14 LUFS` — Spotify, YouTube, Apple Music streaming targets.
+- `-14 LUFS` — Spotify, YouTube, Apple Music streaming.
 - `-23 LUFS` — EBU R128 broadcast standard.
 
-Disable with `--normalize=false` if you want raw level preserved. Transitions also pass through normalization when enabled — a sine-wave beep at −16 LUFS is loud; either use a quieter cue file or disable normalization for runs with transitions.
-
-## Fade in / fade out
-
-Off by default. Enable with `--fade` to add a short fade-in at each clip's start and fade-out at its end. Smooths boundaries and avoids click pops when one clip cuts straight into the next. Tune duration with `--fade-seconds=0.3`.
-
-Implementation note: the fade-out uses ffmpeg's `areverse, afade=t=in, areverse` trick so we don't need to look up each clip's duration. Works fine for voice-memo-length files.
+Closer to 0 = louder. Disable with `--normalize=false` if you want raw levels preserved. Transitions pass through the same normalization — a sine-wave beep at −16 LUFS is loud, so use a quieter cue file or disable normalization for runs with transitions.
 
 ## Pipeline overview
 
 ```
-┌─────────────┐
-│ voice-memo/ │
-└──────┬──────┘
-       │
-       ▼
-┌──────────────────────────────────────────┐
-│ playlist.go · collect()                  │
-│ filter by extension, sort by filename    │
-└──────┬───────────────────────────────────┘
-       │  []string (voice memo paths)
-       ▼
-┌──────────────────────────────────────────┐
-│ transition.go · interleave()  [optional] │
-│ insert cues between consecutive clips    │
-└──────┬───────────────────────────────────┘
-       │  []string (final input list)
-       ▼
-┌──────────────────────────────────────────┐
-│ ffmpeg.go · runFFmpeg()                  │
-│ build -filter_complex:                   │
-│   [N:a] aresample, aformat, loudnorm,    │
-│         afade (in + out)                 │
-│   concat=n=N → [out]                     │
-│ spawn ffmpeg subprocess                  │
-└──────┬───────────────────────────────────┘
-       │
-       ▼
-┌─────────────┐
-│ merged.m4a  │
-└─────────────┘
+┌────────────────────────────────┐
+│ Apple Voice Memos library      │
+│ (~/Library/Group Containers…)  │
+└──────────────┬─────────────────┘
+               │   reel cp --from=… --to=…
+               ▼
+┌────────────────────────────────┐
+│ ./voice-memo/                  │
+│ (symlinks or copies)           │
+└──────────────┬─────────────────┘
+               │   reel ls [--transition=transitions]
+               ▼
+┌────────────────────────────────┐
+│ ./playlist.txt                 │
+│ (plain text, hand-editable)    │
+└──────────────┬─────────────────┘
+               │   reel merge
+               ▼
+┌────────────────────────────────┐
+│ ./merged.m4a                   │
+└────────────────────────────────┘
 ```
 
 ## Files in this repo
 
 | File | Role |
 |---|---|
-| `main.go` | Entry point. Resolves config, calls `collect` → `interleave` → `runFFmpeg`. |
-| `config.go` | `Config` struct, defaults, JSON loader, flag parser. |
-| `playlist.go` | `collect()` and `listAudioFiles()` — read input directory. |
-| `transition.go` | `transitionSource`, random/sequential picker, `interleave()`. |
-| `ffmpeg.go` | `ffmpegSettings`, `runFFmpeg()`, filter graph builder. |
-| `voice-memo/` | Default input directory. |
-| `transitions/` | Default transition cue directory. |
+| `main.go` | Top-level dispatcher. `reel cp` / `reel ls` / `reel merge`. |
+| `cp.go` | `reel cp` — date-range copy from Voice Memos library. |
+| `ls.go` | `reel ls` — folder scan, transition interleave, playlist write. |
+| `merge.go` | `reel merge` — playlist read, ffmpeg invocation, filter graph. |
+| `voice-memo/` | Default input folder for `reel ls`. |
+| `transitions/` | Default transition folder for `reel ls --transition`. |
+
+## Voice Memos library on macOS
+
+The Voice Memos app stores recordings here:
+
+```
+~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/
+```
+
+Filenames follow the pattern `YYYYMMDD HHMMSS-<hex>.{m4a,qta}` and contain the **actual record time** — that's how `reel cp` filters by date.
+
+User-renamed exports lose the date prefix; for those, sorting falls back to whatever the file is named.
 
 ## Todo
 
