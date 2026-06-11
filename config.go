@@ -19,6 +19,8 @@ type Config struct {
 	AudioBitrate      string   `json:"audio_bitrate"`
 	NormalizeLoudness bool     `json:"normalize_loudness"`
 	TargetLUFS        float64  `json:"target_lufs"`
+	Fade              bool     `json:"fade"`
+	FadeSeconds       float64  `json:"fade_seconds"`
 	Transition        bool     `json:"transition"`
 	TransitionPath    string   `json:"transition_path"`
 	TransitionRandom  bool     `json:"transition_random"`
@@ -35,6 +37,8 @@ func defaultConfig() Config {
 		AudioBitrate:      "192k",
 		NormalizeLoudness: true,
 		TargetLUFS:        -16,
+		Fade:              false,
+		FadeSeconds:       0.15,
 		Transition:        false,
 		TransitionPath:    "transitions",
 		TransitionRandom:  true,
@@ -88,6 +92,8 @@ func applyFlags(cfg Config, args []string) (Config, error) {
 	fs.StringVar(&cfg.AudioBitrate, "bitrate", cfg.AudioBitrate, "output audio bitrate (e.g. 192k)")
 	fs.BoolVar(&cfg.NormalizeLoudness, "normalize", cfg.NormalizeLoudness, "normalize each input's loudness (loudnorm) so clips sound equally loud")
 	fs.Float64Var(&cfg.TargetLUFS, "lufs", cfg.TargetLUFS, "target integrated loudness in LUFS (e.g. -16 podcast, -14 streaming, -23 broadcast)")
+	fs.BoolVar(&cfg.Fade, "fade", cfg.Fade, "apply fade-in and fade-out to each clip (avoids click pops at boundaries)")
+	fs.Float64Var(&cfg.FadeSeconds, "fade-seconds", cfg.FadeSeconds, "duration of each fade in seconds (e.g. 0.15)")
 	fs.BoolVar(&cfg.Transition, "transition", cfg.Transition, "insert transitions between clips (requires audio files in the transition folder)")
 	fs.StringVar(&cfg.TransitionPath, "transition-path", cfg.TransitionPath, "folder containing transition audio files")
 	fs.BoolVar(&cfg.TransitionRandom, "transition-random", cfg.TransitionRandom, "randomize transition order (false = sequential cycle)")
@@ -107,5 +113,7 @@ func (c Config) settings() ffmpegSettings {
 		Bitrate:           c.AudioBitrate,
 		NormalizeLoudness: c.NormalizeLoudness,
 		TargetLUFS:        c.TargetLUFS,
+		Fade:              c.Fade,
+		FadeSeconds:       c.FadeSeconds,
 	}
 }

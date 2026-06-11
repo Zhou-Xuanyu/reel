@@ -54,6 +54,8 @@ Each layer overrides only the fields it sets. Missing keys in `reel.json` keep t
 | `audio_bitrate` | `--bitrate` | string | `192k` | Output bitrate (e.g. `192k`, `256k`). |
 | `normalize_loudness` | `--normalize` | bool | `true` | Run `loudnorm` per input so clips land at the same loudness. |
 | `target_lufs` | `--lufs` | float | `-16` | Target integrated loudness. `-16` podcast, `-14` streaming, `-23` broadcast. |
+| `fade` | `--fade` | bool | `false` | Apply fade-in and fade-out to each clip (avoids click pops at boundaries). |
+| `fade_seconds` | `--fade-seconds` | float | `0.15` | Duration of each fade in seconds. |
 | `transition` | `--transition` | bool | `false` | Insert transitions between clips. |
 | `transition_path` | `--transition-path` | string | `transitions` | Folder containing transition audio files. |
 | `transition_random` | `--transition-random` | bool | `true` | Random pick vs sequential cycle through the folder. |
@@ -126,6 +128,12 @@ Voice Memos recorded under different conditions sound very different. By default
 
 Disable with `--normalize=false` if you want raw level preserved. Transitions also pass through normalization when enabled — a sine-wave beep at −16 LUFS is loud; either use a quieter cue file or disable normalization for runs with transitions.
 
+## Fade in / fade out
+
+Off by default. Enable with `--fade` to add a short fade-in at each clip's start and fade-out at its end. Smooths boundaries and avoids click pops when one clip cuts straight into the next. Tune duration with `--fade-seconds=0.3`.
+
+Implementation note: the fade-out uses ffmpeg's `areverse, afade=t=in, areverse` trick so we don't need to look up each clip's duration. Works fine for voice-memo-length files.
+
 ## Pipeline overview
 
 ```
@@ -149,7 +157,8 @@ Disable with `--normalize=false` if you want raw level preserved. Transitions al
 ┌──────────────────────────────────────────┐
 │ ffmpeg.go · runFFmpeg()                  │
 │ build -filter_complex:                   │
-│   [N:a] aresample, aformat, loudnorm     │
+│   [N:a] aresample, aformat, loudnorm,    │
+│         afade (in + out)                 │
 │   concat=n=N → [out]                     │
 │ spawn ffmpeg subprocess                  │
 └──────┬───────────────────────────────────┘
