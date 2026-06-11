@@ -69,22 +69,40 @@ Symlinks point at absolute source paths and survive moving the destination folde
 Reads a folder of audio files, optionally interleaves transitions from a second folder, and writes a plaintext playlist.
 
 ```
-reel ls                                              # voice-memo/ → output/voice-memo.txt
+reel ls                                              # voice-memo/*           → output/voice-memo.txt
+reel ls --mode=recursive                             # voice-memo/** flattened → output/voice-memo.txt
+reel ls --mode=per-folder                            # one playlist per direct subfolder of voice-memo/
 reel ls --transition=transitions                     # interleave cues
 reel ls --transition=transitions --random=false      # cycle cues sequentially
 reel ls --dir=podcast                                # podcast/ → output/podcast.txt
-reel ls --out=somewhere/list.txt                     # explicit path
-reel ls --out=-                                      # write to stdout
+reel ls --out=somewhere/list.txt                     # explicit path (flat/recursive only)
+reel ls --out=-                                      # write to stdout (flat/recursive only)
 ```
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--dir` | `voice-memo` | Input folder of clips (non-recursive). |
+| `--dir` | `voice-memo` | Input folder of clips. |
+| `--mode` | `flat` | `flat` \| `recursive` \| `per-folder`. See below. |
 | `--transition` | (empty) | Folder of transition cues. Empty disables. |
 | `--random` | `true` | Random pick per gap vs sequential cycle. |
-| `--out` | `output/<basename(--dir)>.txt` | Output path. `-` writes to stdout. |
+| `--out` | depends on mode | See modes below. `-` writes to stdout (flat/recursive only). |
 
 Supported audio extensions: `.m4a .mp3 .wav .flac .ogg .aac .qta` (case-insensitive).
+
+### Modes
+
+| Mode | Input | Output |
+|---|---|---|
+| `flat` (default) | Files directly in `--dir`. Subdirs ignored. | `output/<basename(--dir)>.txt` |
+| `recursive` | Walks all subdirs of `--dir`, sorted alphabetically by path (so Voice Memos with `YYYYMMDD HHMMSS` prefix stay chronological across dates). | `output/<basename(--dir)>.txt` |
+| `per-folder` | For each direct subfolder of `--dir`, walks recursively to collect audio. One playlist per subfolder. | `output/<basename(--dir)>/<subfolder>.txt` |
+
+Pairs naturally with `reel cp --by-date`:
+
+```
+reel cp --from=2026-06-08 --by-date            # → voice-memo/2026-06-08/, ...
+reel ls --mode=per-folder                      # → output/voice-memo/2026-06-08.txt, ...
+```
 
 ### Playlist format
 
@@ -175,6 +193,20 @@ Closer to 0 = louder. Disable with `--normalize=false` if you want raw levels pr
 ┌────────────────────────────────┐
 │ ./output/voice-memo.m4a        │
 └────────────────────────────────┘
+
+Per-folder variant (after `reel cp --by-date` + `reel ls --mode=per-folder`):
+
+┌────────────────────────────────┐
+│ ./voice-memo/2026-06-08/, ...  │
+└──────────────┬─────────────────┘
+               │   reel ls --mode=per-folder
+               ▼
+┌────────────────────────────────┐
+│ ./output/voice-memo/           │
+│   2026-06-08.txt               │
+│   2026-06-09.txt               │
+│   ...                          │
+└────────────────────────────────┘
 ```
 
 ## Files in this repo
@@ -202,5 +234,5 @@ Filenames follow the pattern `YYYYMMDD HHMMSS-<hex>.{m4a,qta}` and contain the *
 User-renamed exports lose the date prefix; for those, sorting falls back to whatever the file is named.
 
 ## Todo
-1. reel cp: copy by date
-1. reel ls: nested files
+1. release
+1. man page
