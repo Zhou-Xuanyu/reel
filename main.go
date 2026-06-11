@@ -29,7 +29,6 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		defer ts.cleanup()
 		files = interleave(files, ts)
 		fmt.Printf("interleaved transitions (%s)\n", ts.describe())
 	}
