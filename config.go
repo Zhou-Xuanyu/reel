@@ -30,7 +30,7 @@ func defaultConfig() Config {
 	return Config{
 		Dir:               "voice-memo",
 		Output:            "merged.m4a",
-		AudioExts:         []string{".m4a", ".mp3", ".wav", ".flac", ".ogg", ".aac"},
+		AudioExts:         []string{".m4a", ".mp3", ".wav", ".flac", ".ogg", ".aac", ".qta"},
 		SampleRate:        44100,
 		ChannelLayout:     "stereo",
 		AudioCodec:        "aac",

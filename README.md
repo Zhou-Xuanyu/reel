@@ -47,7 +47,7 @@ Each layer overrides only the fields it sets. Missing keys in `reel.json` keep t
 |---|---|---|---|---|
 | `dir` | `--dir` | string | `voice-memo` | Input folder (non-recursive). |
 | `output` | `--out` | string | `merged.m4a` | Output file path. Extension picks the container. |
-| `audio_exts` | — | string[] | `.m4a .mp3 .wav .flac .ogg .aac` | Extensions treated as audio (case-insensitive). |
+| `audio_exts` | — | string[] | `.m4a .mp3 .wav .flac .ogg .aac .qta` | Extensions treated as audio (case-insensitive). `.qta` is newer Voice Memos format (MP4/AAC under the hood). |
 | `sample_rate` | `--sample-rate` | int | `44100` | Target sample rate in Hz. All inputs resampled to this. |
 | `channel_layout` | `--channel-layout` | string | `stereo` | Target channel layout (`mono`/`stereo`). |
 | `audio_codec` | `--codec` | string | `aac` | Output codec (`aac`/`libmp3lame`/`flac`/`pcm_s16le`/...). |
