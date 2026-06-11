@@ -3,5 +3,5 @@ reel
 *.out
 testdata/output/
 .DS_Store
-merged.m4a
+output/
 voice-memo

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -13,8 +14,8 @@ import (
 // one output via ffmpeg.
 func runMerge(args []string) {
 	fs := flag.NewFlagSet("reel merge", flag.ExitOnError)
-	playlist := fs.String("playlist", "playlist.txt", "playlist file path (- for stdin)")
-	out := fs.String("out", "merged.m4a", "output file path")
+	playlist := fs.String("playlist", "output/voice-memo.txt", "playlist file path (- for stdin)")
+	out := fs.String("out", "", "output file path (default: output/<playlist-basename>.m4a)")
 	sampleRate := fs.Int("sample-rate", 44100, "target sample rate (Hz)")
 	channelLayout := fs.String("channel-layout", "stereo", "target channel layout (mono/stereo)")
 	codec := fs.String("codec", "aac", "output codec (aac/libmp3lame/flac/pcm_s16le/...)")
@@ -22,6 +23,16 @@ func runMerge(args []string) {
 	normalize := fs.Bool("normalize", true, "loudness-normalize each input (loudnorm)")
 	lufs := fs.Float64("lufs", -16, "target integrated loudness in LUFS")
 	fs.Parse(args)
+
+	// default output path: output/<basename(playlist) without extension>.m4a
+	outPath := *out
+	if outPath == "" {
+		base := strings.TrimSuffix(filepath.Base(*playlist), filepath.Ext(*playlist))
+		if base == "" || base == "-" {
+			base = "merged"
+		}
+		outPath = filepath.Join("output", base+".m4a")
+	}
 
 	// read absolute input paths from the playlist file
 	files := loadPlaylist(*playlist)
@@ -37,7 +48,7 @@ func runMerge(args []string) {
 	}
 
 	// concat + encode via ffmpeg
-	concatTo(*out, files, settings)
+	concatTo(outPath, files, settings)
 }
 
 // loadPlaylist reads paths from the playlist file (or stdin), prints a
@@ -54,8 +65,12 @@ func loadPlaylist(path string) []string {
 	return files
 }
 
-// concatTo invokes ffmpeg to merge files into out. Dies on ffmpeg failure.
+// concatTo invokes ffmpeg to merge files into out. Creates the parent
+// directory if needed. Dies on ffmpeg failure.
 func concatTo(out string, files []string, s ffmpegSettings) {
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		die("mkdir output dir:", err)
+	}
 	if err := runFFmpeg(files, out, s); err != nil {
 		die(err)
 	}

@@ -31,13 +31,15 @@ go run . <command> [flags]
 ## Typical pipeline
 
 ```
-reel cp --from=2026-06-08              # → ./voice-memo/  (symlinks by default)
-reel ls --transition=transitions       # → ./playlist.txt
-reel merge                             # → ./merged.m4a
-mpv merged.m4a                         # playback (brew install mpv)
+reel cp --from=2026-06-08              # → ./voice-memo/         (symlinks by default)
+reel ls --transition=transitions       # → ./output/voice-memo.txt
+reel merge                             # → ./output/voice-memo.m4a
+mpv output/voice-memo.m4a              # playback (brew install mpv)
 ```
 
 Inspect or hand-edit the playlist between `ls` and `merge` — it's plain text.
+
+All generated artifacts (playlists, merged audio) land in `./output/`. The filename is derived from the input folder / playlist name, so multiple runs against different inputs don't clobber each other.
 
 ## `reel cp`
 
@@ -57,6 +59,7 @@ reel cp --src=/some/other/dir --to-dir=batch1 --from=2024-01-01
 | `--from` | (required) | Inclusive start date `YYYY-MM-DD` |
 | `--to` | today | Inclusive end date `YYYY-MM-DD` |
 | `--copy` | `false` | Hard copy instead of symlink |
+| `--by-date` | `false` | Group results into per-date subfolders under `--to-dir` |
 | `--dry-run` | `false` | List matches without copying or linking |
 
 Symlinks point at absolute source paths and survive moving the destination folder. If you'll modify or delete the destination files, use `--copy`.
@@ -66,10 +69,11 @@ Symlinks point at absolute source paths and survive moving the destination folde
 Reads a folder of audio files, optionally interleaves transitions from a second folder, and writes a plaintext playlist.
 
 ```
-reel ls                                              # voice-memo/ → playlist.txt
+reel ls                                              # voice-memo/ → output/voice-memo.txt
 reel ls --transition=transitions                     # interleave cues
 reel ls --transition=transitions --random=false      # cycle cues sequentially
-reel ls --dir=other --out=other.txt
+reel ls --dir=podcast                                # podcast/ → output/podcast.txt
+reel ls --out=somewhere/list.txt                     # explicit path
 reel ls --out=-                                      # write to stdout
 ```
 
@@ -78,7 +82,7 @@ reel ls --out=-                                      # write to stdout
 | `--dir` | `voice-memo` | Input folder of clips (non-recursive). |
 | `--transition` | (empty) | Folder of transition cues. Empty disables. |
 | `--random` | `true` | Random pick per gap vs sequential cycle. |
-| `--out` | `playlist.txt` | Output path. `-` writes to stdout. |
+| `--out` | `output/<basename(--dir)>.txt` | Output path. `-` writes to stdout. |
 
 Supported audio extensions: `.m4a .mp3 .wav .flac .ogg .aac .qta` (case-insensitive).
 
@@ -104,7 +108,8 @@ One absolute path per line. Lines starting with `#` are comments. Blank lines ar
 Reads a playlist and concatenates every listed file via ffmpeg's concat filter. Each input is resampled and (optionally) loudness-normalized so clips sound equally loud.
 
 ```
-reel merge                                        # playlist.txt → merged.m4a
+reel merge                                        # output/voice-memo.txt → output/voice-memo.m4a
+reel merge --playlist=output/podcast.txt          # → output/podcast.m4a
 reel merge --out=show.mp3 --codec=libmp3lame
 reel merge --normalize=false                      # raw levels, no loudnorm
 reel merge --lufs=-14                             # louder streaming target
@@ -113,8 +118,8 @@ reel merge --playlist=-                           # read playlist from stdin
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--playlist` | `playlist.txt` | Input playlist path. `-` reads from stdin. |
-| `--out` | `merged.m4a` | Output file. Extension picks the container. |
+| `--playlist` | `output/voice-memo.txt` | Input playlist path. `-` reads from stdin. |
+| `--out` | `output/<basename(--playlist)>.m4a` | Output file. Extension picks the container. |
 | `--sample-rate` | `44100` | Target sample rate (Hz). All inputs resampled to this. |
 | `--channel-layout` | `stereo` | Target channel layout (`mono` or `stereo`). |
 | `--codec` | `aac` | Output audio codec. |
@@ -162,13 +167,13 @@ Closer to 0 = louder. Disable with `--normalize=false` if you want raw levels pr
                │   reel ls [--transition=transitions]
                ▼
 ┌────────────────────────────────┐
-│ ./playlist.txt                 │
+│ ./output/voice-memo.txt        │
 │ (plain text, hand-editable)    │
 └──────────────┬─────────────────┘
                │   reel merge
                ▼
 ┌────────────────────────────────┐
-│ ./merged.m4a                   │
+│ ./output/voice-memo.m4a        │
 └────────────────────────────────┘
 ```
 
@@ -182,6 +187,7 @@ Closer to 0 = louder. Disable with `--normalize=false` if you want raw levels pr
 | `merge.go` | `reel merge` — playlist read, ffmpeg invocation, filter graph. |
 | `voice-memo/` | Default input folder for `reel ls`. |
 | `transitions/` | Default transition folder for `reel ls --transition`. |
+| `output/` | Generated artifacts (playlists, merged audio). Auto-created. Git-ignored. |
 
 ## Voice Memos library on macOS
 

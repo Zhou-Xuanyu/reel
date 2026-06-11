@@ -30,8 +30,14 @@ func runLs(args []string) {
 	dir := fs.String("dir", "voice-memo", "input folder of audio clips")
 	trans := fs.String("transition", "", "folder of transition cues; empty = no transitions")
 	random := fs.Bool("random", true, "randomize transition order (false = sequential cycle)")
-	out := fs.String("out", "playlist.txt", "output playlist path (- for stdout)")
+	out := fs.String("out", "", "output playlist path (default: output/<dir>.txt, - for stdout)")
 	fs.Parse(args)
+
+	// default output path: output/<basename(--dir)>.txt
+	outPath := *out
+	if outPath == "" {
+		outPath = filepath.Join("output", filepath.Base(*dir)+".txt")
+	}
 
 	// collect audio files from the input folder
 	clips := loadClips(*dir)
@@ -43,7 +49,7 @@ func runLs(args []string) {
 	files := interleave(clips, transitions, *random)
 
 	// write to file or stdout
-	writePlaylistTo(*out, files, *dir, *trans, *random, len(clips))
+	writePlaylistTo(outPath, files, *dir, *trans, *random, len(clips))
 }
 
 // loadClips reads audio files from dir and dies on error or empty result.
@@ -75,7 +81,8 @@ func loadTransitions(dir string) []string {
 }
 
 // writePlaylistTo writes the playlist to path (or stdout if path == "-").
-// Prints a summary line on success when writing to a file.
+// Creates the parent directory if needed. Prints a summary line on success
+// when writing to a file.
 func writePlaylistTo(path string, files []string, dir, trans string, random bool, clipCount int) {
 	if path == "-" {
 		if err := writePlaylist(os.Stdout, files, dir, trans, random); err != nil {
@@ -84,6 +91,9 @@ func writePlaylistTo(path string, files []string, dir, trans string, random bool
 		return
 	}
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		die("mkdir output dir:", err)
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		die("create playlist:", err)
