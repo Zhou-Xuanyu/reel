@@ -4,18 +4,21 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// runMerge reads a playlist file and merges every listed audio file into
-// one output via ffmpeg.
+// runMerge reads a playlist file (or all .reel playlists under a directory
+// when --recursive is set) and merges each into one output via ffmpeg.
 func runMerge(args []string) {
 	fs := flag.NewFlagSet("reel merge", flag.ExitOnError)
-	playlist := fs.String("playlist", "output/voice-memo.txt", "playlist file path (- for stdin)")
-	out := fs.String("out", "", "output file path (default: output/<playlist-basename>.m4a)")
+	playlist := fs.String("playlist", "output/voice-memo.reel", "playlist file path (- for stdin); with --recursive, a directory to walk")
+	out := fs.String("out", "", "output file path (default: sibling .m4a next to playlist); ignored with --recursive")
+	recursive := fs.Bool("recursive", false, "walk --playlist as a directory for .reel files; merge each into a sibling .m4a")
 	sampleRate := fs.Int("sample-rate", 44100, "target sample rate (Hz)")
 	channelLayout := fs.String("channel-layout", "stereo", "target channel layout (mono/stereo)")
 	codec := fs.String("codec", "aac", "output codec (aac/libmp3lame/flac/pcm_s16le/...)")
@@ -23,19 +26,6 @@ func runMerge(args []string) {
 	normalize := fs.Bool("normalize", true, "loudness-normalize each input (loudnorm)")
 	lufs := fs.Float64("lufs", -16, "target integrated loudness in LUFS")
 	fs.Parse(args)
-
-	// default output path: output/<basename(playlist) without extension>.m4a
-	outPath := *out
-	if outPath == "" {
-		base := strings.TrimSuffix(filepath.Base(*playlist), filepath.Ext(*playlist))
-		if base == "" || base == "-" {
-			base = "merged"
-		}
-		outPath = filepath.Join("output", base+".m4a")
-	}
-
-	// read absolute input paths from the playlist file
-	files := loadPlaylist(*playlist)
 
 	// pack flags into encode + normalization settings
 	settings := ffmpegSettings{
@@ -47,8 +37,93 @@ func runMerge(args []string) {
 		TargetLUFS:        *lufs,
 	}
 
-	// concat + encode via ffmpeg
+	if *recursive {
+		// with --recursive, fall back to the output root when --playlist
+		// wasn't set explicitly (its default is a file, not a folder).
+		dir := *playlist
+		if !flagWasSet(fs, "playlist") {
+			dir = "output"
+		}
+		mergeAllRecursive(dir, settings)
+		return
+	}
+
+	// single-playlist mode
+	files := loadPlaylist(*playlist)
+	outPath := resolveOutPath(*playlist, *out)
 	concatTo(outPath, files, settings)
+}
+
+// resolveOutPath returns the explicit --out value, or a sibling .m4a path
+// next to the playlist file. Stdin / blank basename falls back to
+// output/merged.m4a.
+func resolveOutPath(playlist, override string) string {
+	if override != "" {
+		return override
+	}
+	base := strings.TrimSuffix(filepath.Base(playlist), filepath.Ext(playlist))
+	if base == "" || base == "-" {
+		return "output/merged.m4a"
+	}
+	return filepath.Join(filepath.Dir(playlist), base+".m4a")
+}
+
+// mergeAllRecursive walks dir for *.reel files and merges each into a
+// sibling .m4a. Dies on bad path or no playlists found.
+func mergeAllRecursive(dir string, s ffmpegSettings) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		die("read "+dir+":", err)
+	}
+	if !info.IsDir() {
+		die("--recursive requires --playlist to be a directory; got", dir)
+	}
+
+	playlists := findReelPlaylists(dir)
+	if len(playlists) == 0 {
+		die("no .reel playlists found under", dir)
+	}
+	fmt.Printf("found %d playlists under %s\n", len(playlists), dir)
+
+	for _, p := range playlists {
+		outPath := strings.TrimSuffix(p, filepath.Ext(p)) + ".m4a"
+		files := loadPlaylist(p)
+		concatTo(outPath, files, s)
+	}
+}
+
+// findReelPlaylists walks dir for *.reel files, sorted by full path.
+func findReelPlaylists(dir string) []string {
+	var out []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(d.Name()), ".reel") {
+			out = append(out, path)
+		}
+		return nil
+	})
+	if err != nil {
+		die("walk "+dir+":", err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// flagWasSet reports whether the named flag was supplied by the user (as
+// opposed to taking its default value).
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
 }
 
 // loadPlaylist reads paths from the playlist file (or stdin), prints a

@@ -32,7 +32,7 @@ go run . <command> [flags]
 
 ```
 reel cp --from=2026-06-08              # → ./voice-memo/         (symlinks by default)
-reel ls --transition=transitions       # → ./output/voice-memo.txt
+reel ls --transition=transitions       # → ./output/voice-memo.reel
 reel merge                             # → ./output/voice-memo.m4a
 mpv output/voice-memo.m4a              # playback (brew install mpv)
 ```
@@ -69,13 +69,13 @@ Symlinks point at absolute source paths and survive moving the destination folde
 Reads a folder of audio files, optionally interleaves transitions from a second folder, and writes a plaintext playlist.
 
 ```
-reel ls                                              # voice-memo/*           → output/voice-memo.txt
-reel ls --mode=recursive                             # voice-memo/** flattened → output/voice-memo.txt
+reel ls                                              # voice-memo/*           → output/voice-memo.reel
+reel ls --mode=recursive                             # voice-memo/** flattened → output/voice-memo.reel
 reel ls --mode=per-folder                            # one playlist per direct subfolder of voice-memo/
 reel ls --transition=transitions                     # interleave cues
 reel ls --transition=transitions --random=false      # cycle cues sequentially
-reel ls --dir=podcast                                # podcast/ → output/podcast.txt
-reel ls --out=somewhere/list.txt                     # explicit path (flat/recursive only)
+reel ls --dir=podcast                                # podcast/ → output/podcast.reel
+reel ls --out=somewhere/list.reel                     # explicit path (flat/recursive only)
 reel ls --out=-                                      # write to stdout (flat/recursive only)
 ```
 
@@ -93,18 +93,61 @@ Supported audio extensions: `.m4a .mp3 .wav .flac .ogg .aac .qta` (case-insensit
 
 | Mode | Input | Output |
 |---|---|---|
-| `flat` (default) | Files directly in `--dir`. Subdirs ignored. | `output/<basename(--dir)>.txt` |
-| `recursive` | Walks all subdirs of `--dir`, sorted alphabetically by path (so Voice Memos with `YYYYMMDD HHMMSS` prefix stay chronological across dates). | `output/<basename(--dir)>.txt` |
-| `per-folder` | For each direct subfolder of `--dir`, walks recursively to collect audio. One playlist per subfolder. | `output/<basename(--dir)>/<subfolder>.txt` |
+| `flat` (default) | Files directly in `--dir`. Subdirs ignored. | `output/<basename(--dir)>.reel` |
+| `recursive` | Walks all subdirs of `--dir`, sorted alphabetically by path (so Voice Memos with `YYYYMMDD HHMMSS` prefix stay chronological across dates). | `output/<basename(--dir)>.reel` |
+| `per-folder` | For each direct subfolder of `--dir`, walks recursively to collect audio. One playlist per subfolder. | `output/<basename(--dir)>/<subfolder>.reel` |
 
 Pairs naturally with `reel cp --by-date`:
 
 ```
 reel cp --from=2026-06-08 --by-date            # → voice-memo/2026-06-08/, ...
-reel ls --mode=per-folder                      # → output/voice-memo/2026-06-08.txt, ...
+reel ls --mode=per-folder                      # → output/voice-memo/2026-06-08.reel, ...
 ```
 
-### Playlist format
+Playlists are written with the `.reel` extension; see the [Playlist file format](#playlist-file-format) under `reel merge`.
+
+## `reel merge`
+
+Reads a playlist and concatenates every listed file via ffmpeg's concat filter. Each input is resampled and (optionally) loudness-normalized so clips sound equally loud.
+
+```
+reel merge                                        # output/voice-memo.reel → output/voice-memo.m4a
+reel merge --playlist=output/podcast.reel          # → output/podcast.m4a
+reel merge --recursive                            # walk output/ for *.reel, merge each
+reel merge --recursive --playlist=output/voice-memo  # walk a specific subtree
+reel merge --out=show.mp3 --codec=libmp3lame
+reel merge --normalize=false                      # raw levels, no loudnorm
+reel merge --lufs=-14                             # louder streaming target
+reel merge --playlist=-                           # read playlist from stdin
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--playlist` | `output/voice-memo.reel` | Playlist file. With `--recursive`, a directory to walk (defaults to `output` when not set). |
+| `--out` | sibling `.m4a` next to playlist | Output file. Extension picks the container. Ignored with `--recursive`. |
+| `--recursive` | `false` | Walk `--playlist` directory for `*.reel`; merge each into a sibling `.m4a`. |
+| `--sample-rate` | `44100` | Target sample rate (Hz). All inputs resampled to this. |
+| `--channel-layout` | `stereo` | Target channel layout (`mono` or `stereo`). |
+| `--codec` | `aac` | Output audio codec. |
+| `--bitrate` | `192k` | Output audio bitrate. |
+| `--normalize` | `true` | Loudness-normalize each input via ffmpeg's `loudnorm`. |
+| `--lufs` | `-16` | Target integrated loudness when normalize is on. |
+
+### Recursive mode
+
+Recursive mode pairs with `reel ls --mode=per-folder`. After generating one `.reel` per date subfolder, one command merges them all in place:
+
+```
+reel cp --from=2026-06-08 --by-date            # → voice-memo/2026-06-08/, ...
+reel ls --mode=per-folder                      # → output/voice-memo/2026-06-08.reel, ...
+reel merge --recursive --playlist=output/voice-memo  # → output/voice-memo/2026-06-08.m4a, ...
+```
+
+Each `.reel` walked produces a sibling `.m4a` at the same path. The `--out` flag is ignored.
+
+### Playlist file format
+
+The `.reel` extension marks reel playlists. Format is plain text:
 
 ```
 # generated by reel ls at 2026-06-11T15:15:55+08:00
@@ -115,35 +158,9 @@ reel ls --mode=per-folder                      # → output/voice-memo/2026-06-0
 /Users/jade/Developer/reel/voice-memo/clip1.m4a
 /Users/jade/Developer/reel/transitions/beep.m4a
 /Users/jade/Developer/reel/voice-memo/clip2.m4a
-/Users/jade/Developer/reel/transitions/beep.m4a
-/Users/jade/Developer/reel/voice-memo/clip3.m4a
 ```
 
-One absolute path per line. Lines starting with `#` are comments. Blank lines are skipped on read. **Hand-edit freely** — reorder, drop entries, splice in any audio file you want.
-
-## `reel merge`
-
-Reads a playlist and concatenates every listed file via ffmpeg's concat filter. Each input is resampled and (optionally) loudness-normalized so clips sound equally loud.
-
-```
-reel merge                                        # output/voice-memo.txt → output/voice-memo.m4a
-reel merge --playlist=output/podcast.txt          # → output/podcast.m4a
-reel merge --out=show.mp3 --codec=libmp3lame
-reel merge --normalize=false                      # raw levels, no loudnorm
-reel merge --lufs=-14                             # louder streaming target
-reel merge --playlist=-                           # read playlist from stdin
-```
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `--playlist` | `output/voice-memo.txt` | Input playlist path. `-` reads from stdin. |
-| `--out` | `output/<basename(--playlist)>.m4a` | Output file. Extension picks the container. |
-| `--sample-rate` | `44100` | Target sample rate (Hz). All inputs resampled to this. |
-| `--channel-layout` | `stereo` | Target channel layout (`mono` or `stereo`). |
-| `--codec` | `aac` | Output audio codec. |
-| `--bitrate` | `192k` | Output audio bitrate. |
-| `--normalize` | `true` | Loudness-normalize each input via ffmpeg's `loudnorm`. |
-| `--lufs` | `-16` | Target integrated loudness when normalize is on. |
+One absolute path per line. Lines starting with `#` are comments. Blank lines are skipped on read. **Hand-edit freely** — reorder, drop entries, splice in any audio file you want. To write a `.reel` from scratch, just list the paths you want merged, one per line.
 
 ### Output container vs codec
 
@@ -185,7 +202,7 @@ Closer to 0 = louder. Disable with `--normalize=false` if you want raw levels pr
                │   reel ls [--transition=transitions]
                ▼
 ┌────────────────────────────────┐
-│ ./output/voice-memo.txt        │
+│ ./output/voice-memo.reel        │
 │ (plain text, hand-editable)    │
 └──────────────┬─────────────────┘
                │   reel merge
@@ -203,8 +220,8 @@ Per-folder variant (after `reel cp --by-date` + `reel ls --mode=per-folder`):
                ▼
 ┌────────────────────────────────┐
 │ ./output/voice-memo/           │
-│   2026-06-08.txt               │
-│   2026-06-09.txt               │
+│   2026-06-08.reel               │
+│   2026-06-09.reel               │
 │   ...                          │
 └────────────────────────────────┘
 ```

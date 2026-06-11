@@ -62,7 +62,7 @@ func emitFlat(dir string, transitions []string, transDir string, random bool, ou
 	files := interleave(clips, transitions, random)
 
 	if out == "" {
-		out = filepath.Join("output", filepath.Base(dir)+".txt")
+		out = filepath.Join("output", filepath.Base(dir)+".reel")
 	}
 	writePlaylistTo(out, files, dir, transDir, random, len(clips))
 }
@@ -73,7 +73,7 @@ func emitRecursive(dir string, transitions []string, transDir string, random boo
 	files := interleave(clips, transitions, random)
 
 	if out == "" {
-		out = filepath.Join("output", filepath.Base(dir)+".txt")
+		out = filepath.Join("output", filepath.Base(dir)+".reel")
 	}
 	writePlaylistTo(out, files, dir, transDir, random, len(clips))
 }
@@ -100,7 +100,7 @@ func emitPerFolder(dir string, transitions []string, transDir string, random boo
 			continue
 		}
 		files := interleave(clips, transitions, random)
-		outPath := filepath.Join(outDir, sub+".txt")
+		outPath := filepath.Join(outDir, sub+".reel")
 		writePlaylistTo(outPath, files, subPath, transDir, random, len(clips))
 		written++
 	}
