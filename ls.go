@@ -249,24 +249,42 @@ func listSubfolders(dir string) []string {
 }
 
 // interleave returns clips with a transition inserted between each pair.
-// random=true picks each from transitions uniformly; random=false cycles
-// through transitions in order. Returns clips unchanged if transitions are
-// empty or there's only one clip.
+// random=true: shuffle the transitions pool and cycle through it, reshuffling
+// when exhausted; the first element of the reshuffled cycle is swapped with
+// the second if it would repeat the previously played cue (so the listener
+// never hears the same transition twice in a row).
+// random=false: cycle through transitions in sorted order.
+// Returns clips unchanged if transitions are empty or there's only one clip.
 func interleave(clips, transitions []string, random bool) []string {
 	if len(clips) <= 1 || len(transitions) == 0 {
 		return clips
 	}
+
+	queue := make([]string, len(transitions))
+	copy(queue, transitions)
+	if random {
+		rand.Shuffle(len(queue), func(i, j int) { queue[i], queue[j] = queue[j], queue[i] })
+	}
+
 	out := make([]string, 0, len(clips)*2-1)
 	out = append(out, clips[0])
-	counter := 0
+	var last string
+	idx := 0
 	for _, c := range clips[1:] {
-		var t string
-		if random {
-			t = transitions[rand.IntN(len(transitions))]
-		} else {
-			t = transitions[counter%len(transitions)]
-			counter++
+		if idx >= len(queue) {
+			// exhausted the cycle — restart
+			if random {
+				rand.Shuffle(len(queue), func(i, j int) { queue[i], queue[j] = queue[j], queue[i] })
+				// avoid consecutive repeat at cycle boundary
+				if len(queue) > 1 && queue[0] == last {
+					queue[0], queue[1] = queue[1], queue[0]
+				}
+			}
+			idx = 0
 		}
+		t := queue[idx]
+		idx++
+		last = t
 		out = append(out, t, c)
 	}
 	return out
