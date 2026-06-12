@@ -87,7 +87,7 @@ reel ls --out=-                                      # write to stdout (flat/rec
 | `--random` | `true` | Random pick per gap vs sequential cycle. |
 | `--out` | depends on mode | See modes below. `-` writes to stdout (flat/recursive only). |
 
-Supported audio extensions: `.m4a .mp3 .wav .flac .ogg .aac .qta` (case-insensitive).
+Supported audio extensions: `.m4a .m4s .mp3 .wav .flac .ogg .aac .qta` (case-insensitive).
 
 ### Modes
 

@@ -16,6 +16,7 @@ import (
 // audioExts is the extension allowlist for the playlist input scan.
 var audioExts = map[string]bool{
 	".m4a":  true,
+	".m4s":  true, // MPEG-DASH segment (Apple streaming)
 	".mp3":  true,
 	".wav":  true,
 	".flac": true,
