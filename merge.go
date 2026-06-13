@@ -10,11 +10,16 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // runMerge reads a playlist file (or all .reel playlists under a directory
 // when --recursive is set) and merges each into one output via ffmpeg.
 func runMerge(args []string) {
+	// ffmpeg opens one file descriptor per -i; macOS soft default is ~256
+	// which blows up with hundreds of inputs. Bump before spawning.
+	raiseFDLimit()
+
 	fs := flag.NewFlagSet("reel merge", flag.ExitOnError)
 	playlist := fs.String("playlist", "output/voice-memo.reel", "playlist file path (- for stdin); with --recursive, a directory to walk")
 	out := fs.String("out", "", "output file path (default: sibling .m4a next to playlist); ignored with --recursive")
@@ -112,6 +117,27 @@ func findReelPlaylists(dir string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// raiseFDLimit bumps the process's RLIMIT_NOFILE soft limit toward the hard
+// ceiling so ffmpeg can open many -i inputs without hitting "too many open
+// files". macOS imposes a kernel cap (typically ~10240) regardless of the
+// reported hard limit, so we clamp to that. Subprocess inherits.
+func raiseFDLimit() {
+	const ceiling = 10240
+	var rlim syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlim); err != nil {
+		return
+	}
+	target := rlim.Max
+	if target > ceiling {
+		target = ceiling
+	}
+	if rlim.Cur >= target {
+		return
+	}
+	rlim.Cur = target
+	_ = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rlim)
 }
 
 // flagWasSet reports whether the named flag was supplied by the user (as
